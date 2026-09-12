@@ -1,0 +1,122 @@
+diff --git a/src/asr.c b/src/asr.c
+index 3a62779..8311da8 100644
+--- a/src/asr.c
++++ b/src/asr.c
+@@ -54,6 +54,7 @@
+ #define ASR_PAYLOAD_PACKET_SIZE 1450
+ #define ASR_PAYLOAD_CHUNK_SIZE 131072
+ #define ASR_CHECKSUM_CHUNK_SIZE 131072
++#define ASR_RECEIVE_TIMEOUT_MS 120000
+ 
+ int asr_open_with_timeout(idevice_t device, asr_client_t* asr)
+ {
+@@ -146,7 +147,8 @@ int asr_receive(asr_client_t asr, plist_t* data)
+ 		return -1;
+ 	}
+ 
+-	device_error = idevice_connection_receive(asr->connection, buffer, ASR_BUFFER_SIZE, &size);
++	/* HFS validation can exceed the default receive timeout. */
++	device_error = idevice_connection_receive_timeout(asr->connection, buffer, ASR_BUFFER_SIZE, &size, ASR_RECEIVE_TIMEOUT_MS);
+ 	if (device_error != IDEVICE_E_SUCCESS) {
+ 		error("ERROR: Unable to receive data from ASR\n");
+ 		free(buffer);
+diff --git a/src/dfu.c b/src/dfu.c
+index 00b95d7..3532c46 100644
+--- a/src/dfu.c
++++ b/src/dfu.c
+@@ -83,7 +83,7 @@ irecv_device_t dfu_get_irecv_device(struct idevicerestore_client_t* client)
+ 	irecv_error_t dfu_error = IRECV_E_SUCCESS;
+ 	irecv_device_t device = NULL;
+ 
+-	irecv_init();
++	/* libirecovery 1.3+ initializes itself; irecv_init() was removed. */
+ 	if (irecv_open_with_ecid_and_attempts(&dfu, client->ecid, 10) != IRECV_E_SUCCESS) {
+ 		return NULL;
+ 	}
+diff --git a/src/idevicerestore.c b/src/idevicerestore.c
+index 4962a05..9ec8898 100644
+--- a/src/idevicerestore.c
++++ b/src/idevicerestore.c
+@@ -263,7 +263,8 @@ void idevice_event_cb(const idevice_event_t *event, void *userdata)
+ 			debug("%s: device %016" PRIx64 " (udid: %s) connected in normal mode\n", __func__, client->ecid, client->udid);
+ 			cond_signal(&client->device_event_cond);
+ 			mutex_unlock(&client->device_event_mutex);
+-		} else if ((client->ecid || (client->device && client->device->chip_id == 0x8900)) && restore_check_mode(client) == 0) {
++		} else if (restore_check_mode(client) == 0) {
++			/* S5L8900 restore devices do not report an ECID. */
+ 			mutex_lock(&client->device_event_mutex);
+ 			client->mode = MODE_RESTORE;
+ 			debug("%s: device %016" PRIx64 " (udid: %s) connected in restore mode\n", __func__, client->ecid, client->udid);
+@@ -471,7 +472,8 @@ int idevicerestore_start(struct idevicerestore_client_t* client)
+ 		error("ERROR: Unable to discover device type\n");
+ 		return -1;
+ 	}
+-	if (client->ecid == 0 && client->mode != MODE_WTF) {
++	/* S5L8900 recovery does not report an ECID. */
++	if (client->ecid == 0 && client->mode != MODE_WTF && client->device->chip_id != 0x8900) {
+ 		error("ERROR: Unable to determine ECID\n");
+ 		return -1;
+ 	}
+@@ -1294,12 +1296,15 @@ int idevicerestore_start(struct idevicerestore_client_t* client)
+ 			}
+ 		}
+ 
+-		/* now we load the iBEC */
+-		if (recovery_send_ibec_nogo(client, build_identity) < 0) {
++		/* iPhone OS 1.0 recovery loads restore components directly. */
++		if (build_identity_has_component(build_identity, "iBEC") && recovery_send_ibec_nogo(client, build_identity) < 0) {
+ 			mutex_unlock(&client->device_event_mutex);
+ 			error("ERROR: Unable to send iBEC\n");
+ 			return -2;
+ 		}
++		if (!build_identity_has_component(build_identity, "iBEC")) {
++			goto skip_ibec_reconnect;
++		}
+ 
+ 		mutex_lock(&client->device_event_mutex);
+ 
+@@ -1331,6 +1336,7 @@ int idevicerestore_start(struct idevicerestore_client_t* client)
+ 			return -2;
+ 		}
+ 		mutex_unlock(&client->device_event_mutex);
++	skip_ibec_reconnect:;
+ 	}
+ 	idevicerestore_progress(client, RESTORE_STEP_PREPARE, 0.5);
+ 	if (client->flags & FLAG_QUIT) {
+diff --git a/src/restore.c b/src/restore.c
+index 9f8a4b3..f987168 100644
+--- a/src/restore.c
++++ b/src/restore.c
+@@ -4430,10 +4430,10 @@ static int restore_process_v7_protocol(struct idevicerestore_client_t* client, p
+         break;
+ 
+     case MAKE_STAGE(FLASH_FIRMWARE,0):
+-        *v7_restore_stage = MAKE_STAGE(UPDATE_BASEBAND,0);
++        /* iPhone OS 1.0 does not include a baseband payload. */
++        *v7_restore_stage = MAKE_STAGE(SET_BOOT_STAGE,0);
+         debug("Requesting Stage 0x%llx\n",*v7_restore_stage);
+-        plist_dict_set_item(dict,"Operation", plist_new_string("UpdateBaseBand"));
+-        plist_dict_set_item(dict,"UpdateBasebandBootloader", plist_new_bool(1));
++        plist_dict_set_item(dict,"Operation", plist_new_string("SetBootStage"));
+         err = restored_send(restore, dict);
+         break;
+ 
+@@ -4743,8 +4743,16 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
+ 	}
+ 	plist_dict_set_item(opts, "SystemPartitionPadding", spp);
+ 
+-	// start the restore process
+-	restore_error = restored_start_restore(restore, opts, client->restore->protocol_version);
++	/* Protocol 7 accepts operation dictionaries directly. */
++	if (client->restore->protocol_version == 7) {
++		plist_t start = plist_new_dict();
++		plist_dict_set_item(start, "Operation", plist_new_string("Partition"));
++		restore_error = restored_send(restore, start);
++		plist_free(start);
++		v7_restore_stage = CREATE_PARTITION_MAP;
++	} else {
++		restore_error = restored_start_restore(restore, opts, client->restore->protocol_version);
++	}
+ 	if (restore_error != RESTORE_E_SUCCESS) {
+ 		error("ERROR: Unable to start the restore process\n");
+ 		plist_free(opts);

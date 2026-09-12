@@ -1,0 +1,85 @@
+diff --git a/src/common/lockdownd.c b/src/common/lockdownd.c
+index 9aaa425..50392d9 100644
+--- a/src/common/lockdownd.c
++++ b/src/common/lockdownd.c
+@@ -536,6 +536,38 @@ int lockdownd_get_value_data(mux_session_t *session, const char *key, uint8_t **
+     return ok;
+ }
+ 
++int lockdownd_set_value_bool(mux_session_t *session, const char *key, int value, char *error_out, size_t error_out_sz) {
++    if (!session || !key) {
++        return 0;
++    }
++    if (error_out && error_out_sz) {
++        error_out[0] = '\0';
++    }
++
++    CFMutableDictionaryRef req = lockdownd_create_request("SetValue");
++    if (!req) {
++        return 0;
++    }
++    plist_dict_set_string(req, "Key", key);
++    plist_dict_set_bool(req, "Value", value != 0);
++
++    CFDictionaryRef resp = NULL;
++    int ok = lockdownd_exchange_plist(session, req, &resp);
++    CFRelease(req);
++    if (!ok || !resp) {
++        return 0;
++    }
++
++    char result[64] = {0};
++    plist_dict_get_string(resp, "Result", result, sizeof(result));
++    if (error_out && error_out_sz) {
++        plist_dict_get_string(resp, "Error", error_out, error_out_sz);
++    }
++    ok = strcmp(result, "Success") == 0;
++    CFRelease(resp);
++    return ok;
++}
++
+ static int parse_device_public_key(const uint8_t *pem, size_t pem_len, EVP_PKEY **out_key) {
+     if (!pem || !out_key) {
+         return 0;
+@@ -879,8 +911,15 @@ int lockdownd_client_start_paired_session(lockdownd_client_t *client, char *sess
+ 
+     char udid[128] = {0};
+     if (!lockdownd_get_value_string(&client->session, "UniqueDeviceID", udid, sizeof(udid))) {
+-        fprintf(stderr, "GetValue(UniqueDeviceID) failed\n");
+-        return 1;
++        struct libusb_device_descriptor descriptor;
++        libusb_device *usb_device = libusb_get_device(client->usb_handle);
++        if (!usb_device || libusb_get_device_descriptor(usb_device, &descriptor) != LIBUSB_SUCCESS ||
++            !descriptor.iSerialNumber || libusb_get_string_descriptor_ascii(client->usb_handle,
++                descriptor.iSerialNumber, (unsigned char *)udid, sizeof(udid) - 1) <= 0) {
++            fprintf(stderr, "Unable to determine device UDID\n");
++            return 1;
++        }
++        fprintf(stderr, "GetValue(UniqueDeviceID) prohibited; using USB serial %s\n", udid);
+     }
+ 
+     char record_path[512];
+@@ -910,7 +949,7 @@ int lockdownd_client_start_paired_session(lockdownd_client_t *client, char *sess
+         }
+     }
+ 
+-    if (!lockdownd_start_session(&client->session, host_id, session_id, sizeof(session_id), error_out, error_out_sz)) {
++    if (!lockdownd_start_session(&client->session, host_id, session_id, session_id_sz, error_out, error_out_sz)) {
+         if (!needs_pair && strcmp(error_out, "InvalidHostID") == 0) {
+             fprintf(stderr, "Saved pairing record rejected (InvalidHostID).\n");
+             fprintf(stderr, "Deleting %s — re-run to re-pair.\n", record_path);
+diff --git a/src/common/lockdownd.h b/src/common/lockdownd.h
+index c94867d..3e620ad 100644
+--- a/src/common/lockdownd.h
++++ b/src/common/lockdownd.h
+@@ -24,7 +24,8 @@ int lockdownd_client_open(lockdownd_client_t *client);
+ 
+ int lockdownd_get_value_string(mux_session_t *session, const char *key, char *out, size_t outsz);
+ int lockdownd_get_value_data(mux_session_t *session, const char *key, uint8_t **out_data, size_t *out_len);
++int lockdownd_set_value_bool(mux_session_t *session, const char *key, int value, char *error_out, size_t error_out_sz);
+ 
+ int lockdownd_send_enter_recovery(mux_session_t *session, const char *session_id, CFDictionaryRef *response);
+ 
+-#endif
+\ No newline at end of file
++#endif

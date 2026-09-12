@@ -1,0 +1,89 @@
+diff --git a/src/idevice.c b/src/idevice.c
+index da4cc4b..a6203c5 100644
+--- a/src/idevice.c
++++ b/src/idevice.c
+@@ -8,6 +8,7 @@
+ #include "idevice.h"
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <unistd.h>
+ 
+ 
+ const char *device_mode_string(device_mode_t mode) {
+@@ -195,3 +196,52 @@ kern_return_t idevice_send_file(idevice_t *dev, void *data, size_t size, uint32_
+ 
+     return KERN_SUCCESS;
+ }
++
++kern_return_t idevice_get_response(idevice_t *dev, char *response, size_t response_size) {
++    if (!response || response_size < 2) {
++        return KERN_INVALID_ARGUMENT;
++    }
++    response[0] = '\0';
++    size_t used = 0;
++
++    /* iBoot 1.x produces command output asynchronously. */
++    usleep(1000000);
++
++    for (int attempt = 0; attempt < 32; attempt++) {
++        iboot_msg_t send = {0};
++        send.cmdcode = CMD_DUMP_BUFFER;
++        send.constant = 0x1234;
++        iboot_msg_t recv = {0};
++        kern_return_t control_result = idevice_send_control(dev, &send, &recv);
++        if (control_result != KERN_SUCCESS || recv.cmdcode != CMD_ACK) {
++            fprintf(stderr, "DumpBuffer failed: transport=0x%x response=0x%04x size=%d\n",
++                control_result, (unsigned short)recv.cmdcode, recv.size);
++            return KERN_FAILURE;
++        }
++        if (recv.size <= 0) {
++            usleep(100000);
++            continue;
++        }
++
++        size_t available = response_size - used - 1;
++        size_t wanted = (size_t)recv.size < available ? (size_t)recv.size : available;
++        int transferred = 0;
++        int ret = libusb_bulk_transfer(dev->handle, EP_CMD_IN,
++            (unsigned char *)response + used, (int)wanted, &transferred, USB_TIMEOUT);
++        if (ret != LIBUSB_SUCCESS) {
++            fprintf(stderr, "DumpBuffer bulk read failed: %s (wanted=%zu reported=%d)\n",
++                libusb_error_name(ret), wanted, recv.size);
++            return KERN_FAILURE;
++        }
++        used += (size_t)transferred;
++        response[used] = '\0';
++        if (used >= 2 && response[used - 1] == ' ' &&
++            (response[used - 2] == ']' || response[used - 2] == '>')) {
++            return KERN_SUCCESS;
++        }
++        if (used + 1 >= response_size) {
++            return KERN_NO_SPACE;
++        }
++    }
++    return used ? KERN_SUCCESS : KERN_FAILURE;
++}
+diff --git a/src/idevice.h b/src/idevice.h
+index 70dcac8..80970d6 100644
+--- a/src/idevice.h
++++ b/src/idevice.h
+@@ -19,10 +19,12 @@
+ #define EP_CTRL_OUT         0x04
+ #define EP_CTRL_IN          0x83
+ #define EP_CMD_OUT          0x02
++#define EP_CMD_IN           0x81
+ #define EP_FILE_OUT         0x05
+ 
+ #define CMD_INIT            0x0000
+ #define CMD_SEND_COMMAND    0x0803
++#define CMD_DUMP_BUFFER     0x0802
+ #define CMD_SEND_FILE       0x0805
+ #define CMD_ACK             0x0808
+ 
+@@ -55,5 +57,6 @@ void idevice_close(idevice_t *dev);
+ kern_return_t idevice_init_handshake(idevice_t *dev);
+ kern_return_t idevice_send_command(idevice_t *dev, const char *cmd);
+ kern_return_t idevice_send_file(idevice_t *dev, void *data, size_t size, uint32_t load_addr);
++kern_return_t idevice_get_response(idevice_t *dev, char *response, size_t response_size);
+ 
+ #endif
