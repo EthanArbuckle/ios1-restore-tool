@@ -81,6 +81,7 @@ RAMDISK="$WORK/$RAMDISK_NAME"
 KERNEL="$WORK/$KERNEL_NAME"
 DEVICETREE="$WORK/DeviceTree.$BOARD.img2"
 IBEC="$WORK/iBEC.$BOARD.RELEASE.dfu"
+IBSS="$WORK/iBSS.$BOARD.RELEASE.dfu"
 
 print "Preparing $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"
 unzip -p "$IPSW" "$RAMDISK_NAME" > "$RAMDISK"
@@ -88,6 +89,9 @@ unzip -p "$IPSW" "$KERNEL_NAME" > "$KERNEL"
 unzip -p "$IPSW" "Firmware/all_flash/all_flash.$BOARD.production/DeviceTree.$BOARD.img2" > "$DEVICETREE"
 if unzip -Z1 "$IPSW" | rg -qx "Firmware/dfu/iBEC.$BOARD.RELEASE.dfu"; then
     unzip -p "$IPSW" "Firmware/dfu/iBEC.$BOARD.RELEASE.dfu" > "$IBEC"
+fi
+if unzip -Z1 "$IPSW" | rg -qx "Firmware/dfu/iBSS.$BOARD.RELEASE.dfu"; then
+    unzip -p "$IPSW" "Firmware/dfu/iBSS.$BOARD.RELEASE.dfu" > "$IBSS"
 fi
 
 has_pid() {
@@ -126,6 +130,13 @@ if (( ! RESUME )); then
         print "Loading the signed $BOARD iBEC..."
         "$ROOT/build/legacy-load-image" "$IBEC" 0x09000000 go
         sleep 2
+    elif [[ -s "$IBSS" ]]; then
+        print "Loading the signed $BOARD iBSS..."
+        "$ROOT/build/legacy-load-image" "$IBSS" 0x09000000 go
+        sleep 2
+    else
+        print -u2 "IPSW does not contain a signed $BOARD recovery image"
+        exit 1
     fi
 
     print "Booting the stock restore ramdisk..."
