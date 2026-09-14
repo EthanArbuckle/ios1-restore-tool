@@ -6,7 +6,7 @@ BREW_PREFIX ?= $(shell brew --prefix)
 LIBUSB := $(BREW_PREFIX)/opt/libusb
 OPENSSL := $(BREW_PREFIX)/opt/openssl@3
 
-CPPFLAGS += -I$(JB)/deps/include -I$(JB)/src -I$(LIBUSB)/include -I$(OPENSSL)/include
+CPPFLAGS += -I$(OPENSSL)/include -I$(JB)/deps/include -I$(JB)/src -I$(LIBUSB)/include
 # The iOS 1 mux code is not reliable with optimization enabled.
 CFLAGS += -O0 -Wall -Wextra
 LDLIBS := -L$(LIBUSB)/lib -lusb-1.0 -L$(OPENSSL)/lib -lssl -lcrypto \

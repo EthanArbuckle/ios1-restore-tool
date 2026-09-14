@@ -102,10 +102,18 @@ wait_for_pid() {
     return 1
 }
 
+enter_recovery() {
+    for attempt in 1 2; do
+        "$ROOT/build/ios1-enter-recovery" && return 0
+        sleep 1
+    done
+    return 1
+}
+
 if (( ! RESUME )); then
     if has_pid "$NORMAL_PID"; then
         print "Requesting recovery mode over the iOS 1 USB/lockdownd protocol..."
-        "$ROOT/build/ios1-enter-recovery"
+        enter_recovery
         wait_for_pid "$RECOVERY_PID" recovery
     elif ! has_pid "$RECOVERY_PID"; then
         print -u2 "No matching $PRODUCT_TYPE found in normal or recovery mode"
@@ -123,35 +131,45 @@ if (( ! RESUME )); then
     wait_for_pid "$NORMAL_PID" restored
 fi
 
-MUX_ADDRESS=127.0.0.1:27016
-MUX_LOG="$WORK/usbmuxd.log"
-start_mux() {
-    "$ROOT/usbmuxd-ref/src/usbmuxd" -f -v -p -S "$MUX_ADDRESS" \
-        -P "$WORK/usbmuxd.pid" > "$MUX_LOG" 2>&1 &
-    MUX_PID=$!
-}
-
-for attempt in {1..3}; do
-    start_mux
-    for _ in {1..10}; do
-        if USBMUXD_SOCKET_ADDRESS=$MUX_ADDRESS idevice_id -l 2>/dev/null | rg -q .; then
-            break 2
-        fi
-        sleep 1
-    done
-    kill "$MUX_PID" 2>/dev/null || true
-    wait "$MUX_PID" 2>/dev/null || true
-    MUX_PID=
+print "Erasing and restoring $PRODUCT_TYPE..."
+USE_SYSTEM_MUX=0
+for _ in {1..10}; do
+    if idevice_id -l 2>/dev/null | rg -q .; then
+        USE_SYSTEM_MUX=1
+        break
+    fi
+    sleep 1
 done
 
-[[ -n ${MUX_PID:-} ]] || {
-    print -u2 "Unable to claim the iOS 1 usbmux interface"
-    tail -40 "$MUX_LOG" >&2
-    exit 1
-}
-
-print "Erasing and restoring $PRODUCT_TYPE..."
-USBMUXD_SOCKET_ADDRESS=$MUX_ADDRESS \
+if (( USE_SYSTEM_MUX )); then
     "$ROOT/idevicerestore-tihmstar/src/idevicerestore" -R -e -y -P "$IPSW"
+else
+    MUX_ADDRESS=127.0.0.1:27016
+    MUX_LOG="$WORK/usbmuxd.log"
+
+    for attempt in {1..3}; do
+        "$ROOT/usbmuxd-ref/src/usbmuxd" -f -v -p -S "$MUX_ADDRESS" \
+            -P "$WORK/usbmuxd.pid" > "$MUX_LOG" 2>&1 &
+        MUX_PID=$!
+        for _ in {1..10}; do
+            if USBMUXD_SOCKET_ADDRESS=$MUX_ADDRESS idevice_id -l 2>/dev/null | rg -q .; then
+                break 2
+            fi
+            sleep 1
+        done
+        kill "$MUX_PID" 2>/dev/null || true
+        wait "$MUX_PID" 2>/dev/null || true
+        MUX_PID=
+    done
+
+    [[ -n ${MUX_PID:-} ]] || {
+        print -u2 "Unable to claim the iOS 1 usbmux interface"
+        tail -40 "$MUX_LOG" >&2
+        exit 1
+    }
+
+    USBMUXD_SOCKET_ADDRESS=$MUX_ADDRESS \
+        "$ROOT/idevicerestore-tihmstar/src/idevicerestore" -R -e -y -P "$IPSW"
+fi
 
 print "Restore complete: $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"

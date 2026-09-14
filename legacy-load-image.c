@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "jailbreak-ref/src/idevice.h"
 
@@ -30,6 +31,20 @@ static int read_file(const char *path, uint8_t **data, size_t *size) {
     return 0;
 }
 
+static int open_recovery_device(idevice_t *device) {
+    for (int attempt = 0; attempt < 40; attempt++) {
+        if (idevice_open(device) == KERN_SUCCESS) {
+            if (idevice_init_handshake(device) == KERN_SUCCESS) {
+                return 0;
+            }
+            idevice_close(device);
+            memset(device, 0, sizeof(*device));
+        }
+        usleep(250000);
+    }
+    return -1;
+}
+
 int main(int argc, char **argv) {
     if (argc != 4) {
         fprintf(stderr, "Usage: %s IMAGE LOAD_ADDRESS IBOOT_COMMAND\n", argv[0]);
@@ -49,8 +64,7 @@ int main(int argc, char **argv) {
     }
 
     idevice_t device = {0};
-    if (idevice_open(&device) != KERN_SUCCESS ||
-        idevice_init_handshake(&device) != KERN_SUCCESS) {
+    if (open_recovery_device(&device) != 0) {
         fprintf(stderr, "Unable to open legacy recovery iBoot\n");
         free(image);
         return 1;

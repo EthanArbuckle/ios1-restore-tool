@@ -8,8 +8,8 @@ Supported devices:
 - iPhone1,1
 - iPod1,1
 
-The restore process uses libusb for recovery and iOS 1 lockdownd access, a
-local usbmuxd instance for `restored` and ASR, and a patched version of
+The restore process uses libusb for recovery and iOS 1 lockdownd access,
+usbmux for `restored` and ASR, and a patched version of
 [tihmstar/idevicerestore](https://github.com/tihmstar/idevicerestore).
 The low-level USB code comes from
 [EthanArbuckle/iOS1.0-Jailbreak](https://github.com/EthanArbuckle/iOS1.0-Jailbreak).
@@ -18,6 +18,8 @@ Tested configurations:
 
 - iPhone1,1 — iPhone OS 1.0 (1A543a)
 - iPod1,1 — iPhone OS 1.1 (3A101a)
+- iPod1,1 — iPhone OS 1.1.1 (3A110a)
+- iPod1,1 — iPhone OS 1.1.5 (4B1)
 
 ## Requirements
 
