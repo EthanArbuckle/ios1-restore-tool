@@ -36,6 +36,7 @@ clone_at https://github.com/libimobiledevice/usbmuxd.git "$USBMUXD_REV" "$ROOT/u
 apply_once "$ROOT/jailbreak-ref" "$ROOT/patches/jailbreak-legacy-response.patch" 'idevice_get_response'
 apply_once "$ROOT/jailbreak-ref" "$ROOT/patches/jailbreak-activation.patch" 'lockdownd_set_value_bool'
 apply_once "$ROOT/idevicerestore-tihmstar" "$ROOT/patches/idevicerestore-modern-ios1.patch" 'ASR_RECEIVE_TIMEOUT_MS'
+apply_once "$ROOT/idevicerestore-tihmstar" "$ROOT/patches/idevicerestore-ipod112.patch" 'strcmp(value, "N45AP")'
 
 make -C "$ROOT" all
 

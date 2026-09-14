@@ -1,0 +1,22 @@
+diff --git a/src/idevicerestore.c b/src/idevicerestore.c
+index 9ec8898..2bad657 100644
+--- a/src/idevicerestore.c
++++ b/src/idevicerestore.c
+@@ -2671,6 +2671,17 @@ int personalize_component(const char *component_name, const unsigned char* compo
+ 
+ int build_manifest_check_compatibility(plist_t build_manifest, const char* product)
+ {
++	plist_t product_type = plist_dict_get_item(build_manifest, "ProductType");
++	if (product_type && plist_get_node_type(product_type) == PLIST_STRING) {
++		char *value = NULL;
++		plist_get_string_val(product_type, &value);
++		int compatible = value && strcmp(value, "N45AP") == 0 && strcmp(product, "iPod1,1") == 0;
++		free(value);
++		if (compatible) {
++			return 0;
++		}
++	}
++
+ 	int res = -1;
+ 	plist_t node = plist_dict_get_item(build_manifest, "SupportedProductTypes");
+ 	if (!node || (plist_get_node_type(node) != PLIST_ARRAY)) {

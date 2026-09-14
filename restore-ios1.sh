@@ -64,6 +64,8 @@ BUILD_VERSION=$(plist_value ProductBuildVersion)
 RAMDISK_NAME=$(plist_value RestoreRamDisks.User)
 KERNEL_NAME=$(plist_value RestoreKernelCaches.Release)
 
+[[ "$PRODUCT_TYPE" == N45AP ]] && PRODUCT_TYPE=iPod1,1
+
 [[ "$PRODUCT_VERSION" == 1.* || "$PRODUCT_VERSION" == 1 ]] || {
     print -u2 "Unsupported IPSW version: $PRODUCT_VERSION"
     exit 1
