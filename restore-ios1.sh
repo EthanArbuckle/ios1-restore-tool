@@ -26,7 +26,7 @@ done
 (( ASSUME_YES )) || { print -u2 "Refusing an erase restore without --yes"; exit 2; }
 [[ -n ${IPSW:-} && -f "$IPSW" ]] || usage
 
-for command in ioreg plutil unzip rg idevice_id; do
+for command in ioreg plutil unzip rg idevice_id tee; do
     command -v "$command" >/dev/null || {
         print -u2 "Missing runtime dependency: $command"
         exit 1
@@ -145,6 +145,8 @@ if (( ! RESUME )); then
 fi
 
 print "Erasing and restoring $PRODUCT_TYPE..."
+RESTORE_LOG="$WORK/idevicerestore.log"
+RESTORE_STATUS=0
 USE_SYSTEM_MUX=0
 for _ in {1..10}; do
     if idevice_id -l 2>/dev/null | rg -q .; then
@@ -155,7 +157,11 @@ for _ in {1..10}; do
 done
 
 if (( USE_SYSTEM_MUX )); then
-    "$ROOT/idevicerestore-tihmstar/src/idevicerestore" -R -e -y -P "$IPSW"
+    set +e
+    "$ROOT/idevicerestore-tihmstar/src/idevicerestore" -R -e -y -P "$IPSW" \
+        2>&1 | tee "$RESTORE_LOG"
+    RESTORE_STATUS=${pipestatus[1]}
+    set -e
 else
     MUX_ADDRESS=127.0.0.1:27016
     MUX_LOG="$WORK/usbmuxd.log"
@@ -181,8 +187,24 @@ else
         exit 1
     }
 
+    set +e
     USBMUXD_SOCKET_ADDRESS=$MUX_ADDRESS \
-        "$ROOT/idevicerestore-tihmstar/src/idevicerestore" -R -e -y -P "$IPSW"
+        "$ROOT/idevicerestore-tihmstar/src/idevicerestore" -R -e -y -P "$IPSW" \
+        2>&1 | tee "$RESTORE_LOG"
+    RESTORE_STATUS=${pipestatus[1]}
+    set -e
+fi
+
+if (( RESTORE_STATUS != 0 )); then
+    if [[ "$PRODUCT_TYPE" == iPhone1,1 && "$PRODUCT_VERSION" == 1.0* &&
+        ${IOS1_PARTITION_RETRY:-0} == 0 ]] &&
+        rg -Uq 'Creating partition map \(0\)(?s:.*?)done\. \(status 2\)' "$RESTORE_LOG"; then
+        print "Partition map initialization requires a second pass; retrying once..."
+        cleanup
+        trap - EXIT INT TERM
+        IOS1_PARTITION_RETRY=1 exec "$0" --yes "$IPSW"
+    fi
+    exit "$RESTORE_STATUS"
 fi
 
 print "Restore complete: $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"
