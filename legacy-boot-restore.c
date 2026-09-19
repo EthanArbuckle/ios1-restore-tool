@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
     char boot_args[320];
     if (raw_ramdisk) {
         snprintf(boot_args, sizeof(boot_args),
-            "setenv boot-args \"rd=md0 pmd0=0x%08x.0x%zx%s\"\n",
+            "setenv boot-args \"rd=md0 pmd0=0x%08x.0x%zx nand-enable-reformat=1%s\"\n",
             RAW_RAMDISK_LOAD_ADDRESS, ramdisk_size,
             getenv("IOS1_SERIAL_DEBUG") ? " -v serial=3" : "");
     } else if (getenv("IOS1_SERIAL_DEBUG")) {

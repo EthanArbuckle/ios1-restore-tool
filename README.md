@@ -73,6 +73,10 @@ not installed. The command verifies the erase and leaves the iPhone in recovery
 mode. The cellular radio will remain unavailable until a subsequent restore
 installs baseband firmware.
 
+The maintenance environment may reformat the iPhone's NAND when its filesystem
+format is incompatible with the selected IPSW. Treat the erase-only command as
+capable of erasing all data on the device.
+
 ## iPod touch setup
 
 To clear the initial Connect to iTunes screen on an iPod touch:

@@ -230,6 +230,9 @@ if (( ! RESUME )); then
     fi
 
     if (( BASEBAND_DOWNGRADE )); then
+        print -u2 "WARNING: The baseband maintenance environment may reformat the iPhone NAND."
+        print -u2 "All data on the device may be erased."
+
         load_target_recovery_image
 
         BASEBAND_RAMDISK="$WORK/baseband-ramdisk.raw"
