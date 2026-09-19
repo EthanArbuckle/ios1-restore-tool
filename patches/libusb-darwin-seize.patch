@@ -1,0 +1,13 @@
+diff --git a/libusb/os/darwin_usb.c b/libusb/os/darwin_usb.c
+index 2ad9246..8cb4f82 100644
+--- a/libusb/os/darwin_usb.c
++++ b/libusb/os/darwin_usb.c
+@@ -1838,7 +1838,7 @@ static int darwin_claim_interface(struct libusb_device_handle *dev_handle, uint8
+   }
+ 
+   /* claim the interface */
+-  kresult = (*IOINTERFACE(cInterface))->USBInterfaceOpen(IOINTERFACE(cInterface));
++  kresult = (*IOINTERFACE(cInterface))->USBInterfaceOpenSeize(IOINTERFACE(cInterface));
+   if (kresult != kIOReturnSuccess) {
+     usbi_info (ctx, "USBInterfaceOpen: %s", darwin_error_str(kresult));
+     return darwin_to_libusb (kresult);

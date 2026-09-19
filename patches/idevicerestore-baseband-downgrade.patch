@@ -1,0 +1,58 @@
+diff --git a/src/restore.c b/src/restore.c
+--- a/src/restore.c
++++ b/src/restore.c
+@@ -841,10 +841,8 @@ int restore_handle_status_msg(restored_client_t client, plist_t msg)
+ 	if (node && plist_get_node_type(node) == PLIST_STRING) {
+ 		plist_get_string_val(node, &log);
+ 		info("Log is available:\n%s\n", log);
+ 		if (status == 1015 && strstr(log, "a later version is already installed, can't rollback")) {
+-			info("Installed baseband is newer; preserving it and completing the OS restore.\n");
+-			restore_finished = 1;
+-			result = 0;
++			info("Installed baseband is newer; waiting for the restore ramdisk to finish.\n");
+ 		}
+ 		free(log);
+ 		log = NULL;
+@@ -4273,6 +4271,16 @@ static int restore_process_v7_protocol(struct idevicerestore_client_t* client, p
+     }
+ 
+     if (complete_status != 0){
++        if (complete_status == 2 &&
++            *v7_restore_stage == MAKE_STAGE(CREATE_PARTITION_MAP,0)) {
++            plist_t retry = plist_new_dict();
++            info("Partition map initialization requires a second pass; retrying in the current restore session.\n");
++            *v7_restore_stage = MAKE_STAGE(CREATE_PARTITION_MAP,1);
++            plist_dict_set_item(retry, "Operation", plist_new_string("Partition"));
++            err = restored_send(restore, retry);
++            plist_free(retry);
++            return err;
++        }
+         return -7;
+     }
+     
+@@ -4291,6 +4299,7 @@ static int restore_process_v7_protocol(struct idevicerestore_client_t* client, p
+         break;
+     
+     case MAKE_STAGE(CREATE_PARTITION_MAP,0):
++    case MAKE_STAGE(CREATE_PARTITION_MAP,1):
+         *v7_restore_stage = MAKE_STAGE(CREATE_FILESYSTEM,0);
+         debug("Requesting Stage 0x%llx\n",*v7_restore_stage);
+         plist_dict_set_item(dict,"Operation", plist_new_string("Erase"));
+@@ -4430,8 +4439,15 @@ static int restore_process_v7_protocol(struct idevicerestore_client_t* client, p
+         break;
+ 
+     case MAKE_STAGE(FLASH_FIRMWARE,0):
+-        *v7_restore_stage = MAKE_STAGE(SET_BOOT_STAGE,0);
++        *v7_restore_stage = (client->flags & FLAG_EXCLUDE)
++            ? MAKE_STAGE(SET_BOOT_STAGE,0)
++            : MAKE_STAGE(UPDATE_BASEBAND,0);
+         debug("Requesting Stage 0x%llx\n",*v7_restore_stage);
+-        plist_dict_set_item(dict,"Operation", plist_new_string("SetBootStage"));
++        if (client->flags & FLAG_EXCLUDE) {
++            plist_dict_set_item(dict,"Operation", plist_new_string("SetBootStage"));
++        } else {
++            plist_dict_set_item(dict,"Operation", plist_new_string("UpdateBaseBand"));
++            plist_dict_set_item(dict,"UpdateBasebandBootloader", plist_new_bool(1));
++        }
+         err = restored_send(restore, dict);
+         break;

@@ -51,6 +51,28 @@ If the device is already running the restore ramdisk:
 
 The restore erases the device. IPSW files are not included.
 
+When downgrading an original iPhone to an older baseband, run:
+
+```sh
+./restore-ios1.sh --yes --baseband-downgrade /path/to/iPhone1,1_Restore.ipsw
+```
+
+This erases the installed baseband firmware header, installs the baseband from
+the selected IPSW, and then performs the normal operating-system restore.
+
+## Baseband erase
+
+To erase the original iPhone's baseband firmware header without restoring iOS:
+
+```sh
+./erase-ios1-baseband.sh --yes /path/to/iPhone1,1_Restore.ipsw
+```
+
+The IPSW supplies the signed iPhone restore environment; its operating system is
+not installed. The command verifies the erase and leaves the iPhone in recovery
+mode. The cellular radio will remain unavailable until a subsequent restore
+installs baseband firmware.
+
 ## iPod touch setup
 
 To clear the initial Connect to iTunes screen on an iPod touch:
@@ -65,4 +87,4 @@ original iPhone; the iPhone requires an activation record or hacktivation.
 ## Notes
 
 - The iPhone OS 1.0 restore protocol is handled separately from 1.1 and later.
-- Restoring 1.0 preserves the currently installed baseband firmware.
+- By default, restoring 1.0 preserves the currently installed baseband firmware.

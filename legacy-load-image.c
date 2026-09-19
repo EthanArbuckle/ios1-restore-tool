@@ -100,9 +100,13 @@ int main(int argc, char **argv) {
         free(image);
         return 1;
     }
-    if (idevice_get_response(&device, response, sizeof(response)) == KERN_SUCCESS) {
-        printf("%s", response);
+    if (strcmp(argv[3], "go") != 0) {
+        if (idevice_get_response(&device, response, sizeof(response)) == KERN_SUCCESS) {
+            printf("%s", response);
+        }
     }
+
+    usleep(2000000);
 
     idevice_close(&device);
     free(image);

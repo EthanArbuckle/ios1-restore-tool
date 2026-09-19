@@ -126,12 +126,11 @@ index 9f8a4b3..f987168 100644
  		free(log);
  		log = NULL;
  	}
-@@ -4430,10 +4430,10 @@ static int restore_process_v7_protocol(struct idevicerestore_client_t* client, p
+@@ -4430,10 +4430,9 @@ static int restore_process_v7_protocol(struct idevicerestore_client_t* client, p
          break;
  
      case MAKE_STAGE(FLASH_FIRMWARE,0):
 -        *v7_restore_stage = MAKE_STAGE(UPDATE_BASEBAND,0);
-+        /* iPhone OS 1.0 does not include a baseband payload. */
 +        *v7_restore_stage = MAKE_STAGE(SET_BOOT_STAGE,0);
          debug("Requesting Stage 0x%llx\n",*v7_restore_stage);
 -        plist_dict_set_item(dict,"Operation", plist_new_string("UpdateBaseBand"));

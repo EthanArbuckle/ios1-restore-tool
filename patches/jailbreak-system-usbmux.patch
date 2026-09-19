@@ -1,0 +1,158 @@
+diff --git a/src/common/lockdownd.c b/src/common/lockdownd.c
+index 50392d9..267860a 100644
+--- a/src/common/lockdownd.c
++++ b/src/common/lockdownd.c
+@@ -1,5 +1,6 @@
+ #include <arpa/inet.h>
+ #include <errno.h>
++#include <fcntl.h>
+ #include <netinet/in.h>
+ #include <pthread.h>
+ #include <stdint.h>
+@@ -10,6 +11,7 @@
+ #include <sys/stat.h>
+ #include <time.h>
+ #include <unistd.h>
++#include <usbmuxd.h>
+ 
+ #include "lockdownd.h"
+ #include "plist.h"
+@@ -345,7 +347,9 @@ void lockdownd_client_cleanup(lockdownd_client_t *client) {
+         return;
+     }
+ 
+-    if (client->usb_handle) {
++    if (client->session.socket_fd > 0) {
++        session_close(&client->session);
++    } else if (client->usb_handle) {
+         session_close(&client->session);
+ 
+         libusb_release_interface(client->usb_handle, client->intf_num);
+@@ -365,6 +369,22 @@ int lockdownd_client_open(lockdownd_client_t *client) {
+     }
+ 
+     memset(client, 0, sizeof(*client));
++    client->session.socket_fd = -1;
++
++    usbmuxd_device_info_t device;
++    int mux_device_result = usbmuxd_get_device(NULL, &device, DEVICE_LOOKUP_USBMUX);
++    if (mux_device_result > 0) {
++        int socket_fd = usbmuxd_connect(device.handle, LOCKDOWND_PORT);
++        if (socket_fd >= 0) {
++            int flags = fcntl(socket_fd, F_GETFL);
++            if (flags >= 0) {
++                fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK);
++            }
++            client->session.socket_fd = socket_fd;
++            snprintf(client->device_udid, sizeof(client->device_udid), "%s", device.udid);
++            return 1;
++        }
++    }
+ 
+     if (libusb_init(&client->usb_ctx) < 0) {
+         fprintf(stderr, "libusb_init failed\n");
+@@ -916,13 +936,17 @@ int lockdownd_client_start_paired_session(lockdownd_client_t *client, char *sess
+ 
+     char udid[128] = {0};
+     if (!lockdownd_get_value_string(&client->session, "UniqueDeviceID", udid, sizeof(udid))) {
+-        struct libusb_device_descriptor descriptor;
+-        libusb_device *usb_device = libusb_get_device(client->usb_handle);
+-        if (!usb_device || libusb_get_device_descriptor(usb_device, &descriptor) != LIBUSB_SUCCESS ||
+-            !descriptor.iSerialNumber || libusb_get_string_descriptor_ascii(client->usb_handle,
+-                descriptor.iSerialNumber, (unsigned char *)udid, sizeof(udid) - 1) <= 0) {
+-            fprintf(stderr, "Unable to determine device UDID\n");
+-            return 1;
++        if (client->device_udid[0]) {
++            snprintf(udid, sizeof(udid), "%s", client->device_udid);
++        } else {
++            struct libusb_device_descriptor descriptor;
++            libusb_device *usb_device = libusb_get_device(client->usb_handle);
++            if (!usb_device || libusb_get_device_descriptor(usb_device, &descriptor) != LIBUSB_SUCCESS ||
++                !descriptor.iSerialNumber || libusb_get_string_descriptor_ascii(client->usb_handle,
++                    descriptor.iSerialNumber, (unsigned char *)udid, sizeof(udid) - 1) <= 0) {
++                fprintf(stderr, "Unable to determine device UDID\n");
++                return 1;
++            }
+         }
+         fprintf(stderr, "GetValue(UniqueDeviceID) prohibited; using USB serial %s\n", udid);
+     }
+diff --git a/src/common/lockdownd.h b/src/common/lockdownd.h
+index 3e620ad..0574e05 100644
+--- a/src/common/lockdownd.h
++++ b/src/common/lockdownd.h
+@@ -14,6 +14,7 @@ typedef struct {
+     uint8_t ep_out;
+     uint8_t ep_in;
+     int intf_num;
++    char device_udid[44];
+     usb_pipe_t pipe;
+     mux_session_t session;
+ } lockdownd_client_t;
+diff --git a/src/common/mux.c b/src/common/mux.c
+index 5e051ff..a53e9b1 100644
+--- a/src/common/mux.c
++++ b/src/common/mux.c
+@@ -137,6 +137,25 @@ static int usb_pipe_poll(usb_pipe_t *pipe, int timeout_ms) {
+ }
+ 
+ int session_send_frame(mux_session_t *s, uint8_t flags, const uint8_t *data, int data_len) {
++    if (s->socket_fd > 0) {
++        int offset = 0;
++        while (offset < data_len) {
++            ssize_t written = send(s->socket_fd, data + offset,
++                (size_t)(data_len - offset), 0);
++            if (written < 0) {
++                if (errno == EINTR) {
++                    continue;
++                }
++                return -1;
++            }
++            if (written == 0) {
++                return -1;
++            }
++            offset += (int)written;
++        }
++        return 0;
++    }
++
+     int total_len = 28 + data_len;
+     uint8_t frame[28 + MAX_TRANSFER_SIZE];
+ 
+@@ -377,10 +396,25 @@ int session_connect(mux_session_t *s) {
+ }
+ 
+ void session_close(mux_session_t *s) {
++    if (s->socket_fd > 0) {
++        close(s->socket_fd);
++        s->socket_fd = -1;
++        return;
++    }
+     session_send_frame(s, TCP_FIN | TCP_ACK, NULL, 0);
+ }
+ 
+ int session_recv(mux_session_t *s, uint8_t *buf, int bufsz) {
++    if (s->socket_fd > 0) {
++        for (;;) {
++            ssize_t received = recv(s->socket_fd, buf, (size_t)bufsz, 0);
++            if (received < 0 && errno == EINTR) {
++                continue;
++            }
++            return received > 0 ? (int)received : -1;
++        }
++    }
++
+     if (s->prebuf_len > 0) {
+         int n = s->prebuf_len;
+         if (n > bufsz) {
+diff --git a/src/common/mux.h b/src/common/mux.h
+index 9a12d99..da983a2 100644
+--- a/src/common/mux.h
++++ b/src/common/mux.h
+@@ -28,6 +28,7 @@ typedef struct {
+ 
+ typedef struct {
+     usb_pipe_t *pipe;
++    int socket_fd;
+     uint16_t device_port;
+     uint16_t src_port;
+     uint32_t tx_seq;

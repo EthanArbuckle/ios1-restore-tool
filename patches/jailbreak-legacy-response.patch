@@ -10,7 +10,7 @@ index da4cc4b..a6203c5 100644
  
  
  const char *device_mode_string(device_mode_t mode) {
-@@ -195,3 +196,52 @@ kern_return_t idevice_send_file(idevice_t *dev, void *data, size_t size, uint32_
+@@ -195,3 +196,59 @@ kern_return_t idevice_send_file(idevice_t *dev, void *data, size_t size, uint32_
  
      return KERN_SUCCESS;
  }
@@ -31,7 +31,14 @@ index da4cc4b..a6203c5 100644
 +        send.constant = 0x1234;
 +        iboot_msg_t recv = {0};
 +        kern_return_t control_result = idevice_send_control(dev, &send, &recv);
-+        if (control_result != KERN_SUCCESS || recv.cmdcode != CMD_ACK) {
++        if (control_result == KERN_SUCCESS &&
++            (recv.cmdcode == 0x0801 || recv.cmdcode == 0x0809) &&
++            recv.size == 0) {
++            usleep(100000);
++            continue;
++        }
++        if (control_result != KERN_SUCCESS ||
++            (recv.cmdcode != CMD_ACK && recv.cmdcode != 0x0801)) {
 +            fprintf(stderr, "DumpBuffer failed: transport=0x%x response=0x%04x size=%d\n",
 +                control_result, (unsigned short)recv.cmdcode, recv.size);
 +            return KERN_FAILURE;

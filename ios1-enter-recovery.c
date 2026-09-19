@@ -34,7 +34,22 @@ int main(void) {
         return 1;
     }
 
-    if (response) CFRelease(response);
+    if (response) {
+        CFTypeRef error_value = CFDictionaryGetValue(response, CFSTR("Error"));
+        if (error_value && CFGetTypeID(error_value) == CFStringGetTypeID()) {
+            char response_error[128] = {0};
+            CFStringGetCString((CFStringRef)error_value, response_error,
+                sizeof(response_error), kCFStringEncodingUTF8);
+            fprintf(stderr, "EnterRecovery rejected: %s\n",
+                response_error[0] ? response_error : "unknown error");
+            CFRelease(response);
+            lockdownd_client_cleanup(&client);
+            return 1;
+        }
+
+        CFRelease(response);
+    }
+
     lockdownd_client_cleanup(&client);
     puts("EnterRecovery accepted");
     return 0;
