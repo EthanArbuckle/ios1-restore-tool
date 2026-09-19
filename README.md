@@ -1,18 +1,11 @@
 # iOS 1 Restore
 
-Restore iPhone OS 1.x to the original iPhone and first-generation iPod touch
-from a modern Mac.
+Restore iPhone OS 1.x from a modern Mac.
 
 Supported devices:
 
 - iPhone1,1
 - iPod1,1
-
-The restore process uses libusb for recovery and iOS 1 lockdownd access,
-usbmux for `restored` and ASR, and a patched version of
-[tihmstar/idevicerestore](https://github.com/tihmstar/idevicerestore).
-The low-level USB code comes from
-[EthanArbuckle/iOS1.0-Jailbreak](https://github.com/EthanArbuckle/iOS1.0-Jailbreak).
 
 ## Requirements
 
@@ -32,10 +25,9 @@ brew install autoconf automake libimobiledevice libirecovery libtool libusb open
 ./scripts/bootstrap.sh
 ```
 
-This downloads pinned revisions of the required projects, applies the patches
-in `patches/`, and builds the restore tools.
-
 ## Restore
+
+### Normal restore
 
 Connect the device in normal or recovery mode and run:
 
@@ -43,41 +35,20 @@ Connect the device in normal or recovery mode and run:
 ./restore-ios1.sh --yes /path/to/Restore.ipsw
 ```
 
-If the device is already running the restore ramdisk:
+### Baseband downgrade
 
-```sh
-./restore-ios1.sh --yes --resume /path/to/Restore.ipsw
-```
-
-The restore erases the device. IPSW files are not included.
-
-When downgrading an original iPhone to an older baseband, run:
+For an original iPhone already running 1.x, connect it in normal or recovery
+mode and run:
 
 ```sh
 ./restore-ios1.sh --yes --baseband-downgrade /path/to/iPhone1,1_Restore.ipsw
 ```
 
-This erases the installed baseband firmware header, installs the baseband from
-the selected IPSW, and then performs the normal operating-system restore.
+For a phone running 2.x or 3.x, enter hardware DFU first and use the same
+command. This path has been tested from 3.1.3 to 1.0. DFU also works from 1.x,
+but performs an extra restore pass.
 
-### Downgrading from iPhone OS 2.x or 3.x
-
-Put the original iPhone in hardware DFU mode, then run the same baseband
-downgrade command with the target iPhone OS 1.x IPSW:
-
-```sh
-./restore-ios1.sh --yes --baseband-downgrade /path/to/iPhone1,1_Restore.ipsw
-```
-
-The command loads the target IPSW's recovery chain, restores its filesystem and
-NOR without updating the baseband, returns the phone to recovery, installs the
-target baseband, and performs the final restore. This path has been tested from iPhone OS
-3.1.3 to 1.0.
-
-For a phone already running iPhone OS 1.x, connect it in normal or recovery mode
-instead. Hardware DFU also works, but adds an unnecessary bootstrap restore.
-
-## Baseband erase
+### Baseband erase only
 
 To erase the original iPhone's baseband firmware header without restoring iOS:
 
@@ -85,14 +56,8 @@ To erase the original iPhone's baseband firmware header without restoring iOS:
 ./erase-ios1-baseband.sh --yes /path/to/iPhone1,1_Restore.ipsw
 ```
 
-The IPSW supplies the signed iPhone restore environment; its operating system is
-not installed. The command verifies the erase and leaves the iPhone in recovery
-mode. The cellular radio will remain unavailable until a subsequent restore
-installs baseband firmware.
-
-The maintenance environment may reformat the iPhone's NAND when its filesystem
-format is incompatible with the selected IPSW. Treat the erase-only command as
-capable of erasing all data on the device.
+This leaves the phone in recovery with no working cellular radio. It may also
+reformat the phone's NAND and erase all data.
 
 ## iPod touch setup
 
@@ -102,10 +67,15 @@ To clear the initial Connect to iTunes screen on an iPod touch:
 ./activate-ios1.sh
 ```
 
-This sets `iTunesHasConnected` through lockdownd. It does not activate an
-original iPhone; the iPhone requires an activation record or hacktivation.
+This does not activate an original iPhone.
 
 ## Notes
 
-- The iPhone OS 1.0 restore protocol is handled separately from 1.1 and later.
 - By default, restoring 1.0 preserves the currently installed baseband firmware.
+
+## Credits
+
+Uses a patched version of
+[tihmstar's idevicerestore](https://github.com/tihmstar/idevicerestore) and
+recovery and lockdownd code from
+[iOS1.0-Jailbreak](https://github.com/EthanArbuckle/iOS1.0-Jailbreak).
