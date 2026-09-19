@@ -23,7 +23,7 @@ The low-level USB code comes from
 Install the build dependencies:
 
 ```sh
-brew install autoconf automake libimobiledevice libtool libusb openssl@3 pkg-config ripgrep
+brew install autoconf automake libimobiledevice libirecovery libtool libusb openssl@3 pkg-config ripgrep
 ```
 
 ## Build
@@ -59,6 +59,23 @@ When downgrading an original iPhone to an older baseband, run:
 
 This erases the installed baseband firmware header, installs the baseband from
 the selected IPSW, and then performs the normal operating-system restore.
+
+### Downgrading from iPhone OS 2.x or 3.x
+
+Put the original iPhone in hardware DFU mode, then run the same baseband
+downgrade command with the target iPhone OS 1.x IPSW:
+
+```sh
+./restore-ios1.sh --yes --baseband-downgrade /path/to/iPhone1,1_Restore.ipsw
+```
+
+The command loads the target IPSW's recovery chain, restores its filesystem and
+NOR without updating the baseband, returns the phone to recovery, installs the
+target baseband, and performs the final restore. This path has been tested from iPhone OS
+3.1.3 to 1.0.
+
+For a phone already running iPhone OS 1.x, connect it in normal or recovery mode
+instead. Hardware DFU also works, but adds an unnecessary bootstrap restore.
 
 ## Baseband erase
 

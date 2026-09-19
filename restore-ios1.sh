@@ -7,6 +7,7 @@ ASSUME_YES=0
 RESUME=0
 BASEBAND_DOWNGRADE=0
 ERASE_BASEBAND_ONLY=0
+BOOTSTRAP_RESTORE=${IOS1_BOOTSTRAP_RESTORE:-0}
 
 usage() {
     if (( ERASE_BASEBAND_ONLY )); then
@@ -129,7 +130,7 @@ KERNEL_NAME=$(plist_value RestoreKernelCaches.Release)
 }
 
 case "$PRODUCT_TYPE" in
-    iPhone1,1) BOARD=m68ap; NORMAL_PID=4752; RECOVERY_PID=4736 ;;
+    iPhone1,1) BOARD=m68ap; NORMAL_PID=4752; RECOVERY_PID=4736; MODERN_RECOVERY_PID=4737; DFU_PID=4642 ;;
     iPod1,1) BOARD=n45ap; NORMAL_PID=4753; RECOVERY_PID=4736 ;;
     *) print -u2 "Unsupported iOS 1 product: $PRODUCT_TYPE"; exit 1 ;;
 esac
@@ -144,6 +145,7 @@ KERNEL="$WORK/$KERNEL_NAME"
 DEVICETREE="$WORK/DeviceTree.$BOARD.img2"
 IBEC="$WORK/iBEC.$BOARD.RELEASE.dfu"
 IBSS="$WORK/iBSS.$BOARD.RELEASE.dfu"
+WTF="$WORK/WTF.s5l8900xall.RELEASE.dfu"
 
 print "Preparing $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"
 unzip -p "$IPSW" "$RAMDISK_NAME" > "$RAMDISK"
@@ -154,6 +156,9 @@ if unzip -Z1 "$IPSW" | rg -qx "Firmware/dfu/iBEC.$BOARD.RELEASE.dfu"; then
 fi
 if unzip -Z1 "$IPSW" | rg -qx "Firmware/dfu/iBSS.$BOARD.RELEASE.dfu"; then
     unzip -p "$IPSW" "Firmware/dfu/iBSS.$BOARD.RELEASE.dfu" > "$IBSS"
+fi
+if unzip -Z1 "$IPSW" | rg -qx "Firmware/dfu/WTF.s5l8900xall.RELEASE.dfu"; then
+    unzip -p "$IPSW" "Firmware/dfu/WTF.s5l8900xall.RELEASE.dfu" > "$WTF"
 fi
 
 has_pid() {
@@ -202,6 +207,52 @@ load_target_recovery_image() {
     sleep 2
 }
 
+enter_recovery_after_bootstrap() {
+    for _ in {1..120}; do
+        has_pid "$RECOVERY_PID" && return 0
+        if has_pid "$NORMAL_PID" && enter_recovery; then
+            wait_for_pid "$RECOVERY_PID" recovery 120
+            return 0
+        fi
+        sleep 1
+    done
+    print -u2 "Timed out waiting to enter recovery after the bootstrap restore"
+    return 1
+}
+
+send_dfu_image() {
+    local image=$1
+    for _ in {1..10}; do
+        irecovery -f "$image" && return 0
+        sleep 1
+    done
+    return 1
+}
+
+bootstrap_from_dfu() {
+    command -v irecovery >/dev/null || {
+        print -u2 "Missing runtime dependency: irecovery"
+        return 1
+    }
+    [[ -s "$WTF" && -s "$IBSS" ]] || {
+        print -u2 "The selected IPSW does not contain the required WTF and iBSS images"
+        return 1
+    }
+
+    print "Loading the target iOS 1 recovery chain from DFU mode..."
+    send_dfu_image "$WTF"
+    sleep 1
+    wait_for_pid "$DFU_PID" DFU 30
+    send_dfu_image "$IBSS"
+    wait_for_pid "$RECOVERY_PID" recovery 30
+
+    print "Bootstrapping the target filesystem and NOR without updating baseband..."
+    IOS1_BOOTSTRAP_RESTORE=1 "$ROOT/restore-ios1.sh" --yes "$IPSW"
+
+    print "Returning the bootstrapped device to recovery mode..."
+    enter_recovery_after_bootstrap
+}
+
 start_restore_mux() {
     MUX_ADDRESS=127.0.0.1:27016
     MUX_LOG="$WORK/usbmuxd.log"
@@ -220,19 +271,37 @@ stop_restore_mux() {
 }
 
 if (( ! RESUME )); then
+    if (( BASEBAND_DOWNGRADE )); then
+        print -u2 "WARNING: The baseband maintenance environment may reformat the iPhone NAND."
+        print -u2 "All data on the device may be erased."
+    fi
+
+    if [[ "$PRODUCT_TYPE" == iPhone1,1 ]] && has_pid "$DFU_PID"; then
+        (( BASEBAND_DOWNGRADE )) || {
+            print -u2 "An iPhone in DFU mode requires --baseband-downgrade for this workflow"
+            exit 1
+        }
+        bootstrap_from_dfu
+    fi
+
     if has_pid "$NORMAL_PID"; then
         print "Requesting recovery mode over the iOS 1 USB/lockdownd protocol..."
-        enter_recovery
+        enter_recovery || {
+            if (( BASEBAND_DOWNGRADE )); then
+                print -u2 "Unable to enter legacy recovery. If the iPhone runs 2.x or 3.x, put it in hardware DFU mode and retry."
+            fi
+            exit 1
+        }
         wait_for_pid "$RECOVERY_PID" recovery
+    elif [[ "$PRODUCT_TYPE" == iPhone1,1 ]] && has_pid "$MODERN_RECOVERY_PID"; then
+        print -u2 "The iPhone is in iPhone OS 2.x/3.x recovery mode. Put it in hardware DFU mode and retry."
+        exit 1
     elif ! has_pid "$RECOVERY_PID"; then
         print -u2 "No matching $PRODUCT_TYPE found in normal or recovery mode"
         exit 1
     fi
 
     if (( BASEBAND_DOWNGRADE )); then
-        print -u2 "WARNING: The baseband maintenance environment may reformat the iPhone NAND."
-        print -u2 "All data on the device may be erased."
-
         load_target_recovery_image
 
         BASEBAND_RAMDISK="$WORK/baseband-ramdisk.raw"
@@ -329,7 +398,9 @@ print "Erasing and restoring $PRODUCT_TYPE..."
 RESTORE_LOG="$WORK/idevicerestore.log"
 RESTORE_STATUS=0
 RESTORE_OPTIONS=(-R -e -y -P)
-if (( ! BASEBAND_DOWNGRADE )) &&
+if (( BOOTSTRAP_RESTORE )); then
+    RESTORE_OPTIONS+=(-x)
+elif (( ! BASEBAND_DOWNGRADE )) &&
     [[ "$PRODUCT_TYPE" == iPhone1,1 && "$PRODUCT_VERSION" == 1.0* ]]; then
     RESTORE_OPTIONS+=(-x)
 fi
@@ -412,4 +483,8 @@ if (( ! BASEBAND_DOWNGRADE )) && [[ "$PRODUCT_TYPE" == iPhone1,1 ]] &&
     wait_for_pid "$NORMAL_PID" restored 120
 fi
 
-print "Restore complete: $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"
+if (( BOOTSTRAP_RESTORE )); then
+    print "Bootstrap restore complete: $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"
+else
+    print "Restore complete: $PRODUCT_TYPE iOS $PRODUCT_VERSION ($BUILD_VERSION)"
+fi
