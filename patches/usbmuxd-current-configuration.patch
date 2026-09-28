@@ -1,0 +1,31 @@
+diff --git a/src/usb.c b/src/usb.c
+index d0e9afc..92210a3 100644
+--- a/src/usb.c
++++ b/src/usb.c
+@@ -469,6 +469,8 @@ static int guess_mode(struct libusb_device* dev, struct usb_device *usbdev)
+ static int set_valid_configuration(struct libusb_device* dev, struct usb_device *usbdev, struct libusb_device_handle *handle)
+ {
+ 	int j, k, res, found = 0;
++	int config_index, config_count = 0;
++	int config_order[256];
+ 	struct libusb_config_descriptor *config;
+ 	const struct libusb_interface_descriptor *intf;
+ 	struct libusb_device_descriptor devdesc = usbdev->devdesc;
+@@ -481,7 +483,17 @@ static int set_valid_configuration(struct libusb_device* dev, struct usb_device
+ 		return -1;
+ 	}
+ 
++	if(current_config > 0 && current_config <= devdesc.bNumConfigurations) {
++		config_order[config_count++] = current_config;
++	}
+ 	for(j = devdesc.bNumConfigurations ; j > 0  ; j--) {
++		if(j != current_config) {
++			config_order[config_count++] = j;
++		}
++	}
++
++	for(config_index = 0; config_index < config_count; config_index++) {
++		j = config_order[config_index];
+ 		if((res = libusb_get_config_descriptor_by_value(dev, j, &config)) != 0) {
+ 			usbmuxd_log(LL_NOTICE, "Could not get configuration %i descriptor for device %i-%i: %s", j, bus, address, libusb_error_name(res));
+ 			continue;

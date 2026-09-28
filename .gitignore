@@ -1,4 +1,5 @@
 .DS_Store
+restore_*.log
 /build/
 /idevicerestore-tihmstar/
 /jailbreak-ref/

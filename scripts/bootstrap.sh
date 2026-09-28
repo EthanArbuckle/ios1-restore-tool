@@ -41,7 +41,9 @@ apply_once "$ROOT/jailbreak-ref" "$ROOT/patches/jailbreak-system-usbmux.patch" '
 apply_once "$ROOT/idevicerestore-tihmstar" "$ROOT/patches/idevicerestore-modern-ios1.patch" 'ASR_RECEIVE_TIMEOUT_MS'
 apply_once "$ROOT/idevicerestore-tihmstar" "$ROOT/patches/idevicerestore-baseband-downgrade.patch" 'Partition map initialization requires a second pass'
 apply_once "$ROOT/idevicerestore-tihmstar" "$ROOT/patches/idevicerestore-ipod112.patch" 'strcmp(value, "N45AP")'
+apply_once "$ROOT/idevicerestore-tihmstar" "$ROOT/patches/idevicerestore-ios2-restore.patch" 'restored_start_restore(restore, NULL, 2)'
 apply_once "$ROOT/libusb-ref" "$ROOT/patches/libusb-darwin-seize.patch" 'USBInterfaceOpenSeize'
+apply_once "$ROOT/usbmuxd-ref" "$ROOT/patches/usbmuxd-current-configuration.patch" 'config_order'
 
 make -C "$ROOT" all
 

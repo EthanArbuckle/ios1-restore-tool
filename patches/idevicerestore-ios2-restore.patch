@@ -1,0 +1,12 @@
+diff --git a/src/restore.c b/src/restore.c
+--- a/src/restore.c
++++ b/src/restore.c
+@@ -4774,6 +4774,8 @@ int restore_device(struct idevicerestore_client_t* client, plist_t build_identit
+ 		restore_error = restored_send(restore, start);
+ 		plist_free(start);
+ 		v7_restore_stage = CREATE_PARTITION_MAP;
++	} else if (client->version && client->version[0] == '2') {
++		restore_error = restored_start_restore(restore, NULL, 2);
+ 	} else {
+ 		restore_error = restored_start_restore(restore, opts, client->restore->protocol_version);
+ 	}

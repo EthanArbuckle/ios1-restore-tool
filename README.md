@@ -45,8 +45,8 @@ mode and run:
 ```
 
 For a phone running 2.x or 3.x, enter hardware DFU first and use the same
-command. This path has been tested from 3.1.3 to 1.0. DFU also works from 1.x,
-but performs an extra restore pass.
+command. This path has been tested from 2.2.1 and 3.1.3 to 1.0. DFU also works
+from 1.x, but performs an extra restore pass.
 
 ### Baseband erase only
 
@@ -72,6 +72,23 @@ This does not activate an original iPhone.
 ## Notes
 
 - By default, restoring 1.0 preserves the currently installed baseband firmware.
+- Filesystem verification may remain silent for several minutes after the
+  progress reaches 100%. Do not interrupt the restore.
+
+If the restore ramdisk is not discovered, disable Apple's device updater before
+retrying:
+
+```sh
+launchctl disable gui/$(id -u)/com.apple.mobiledeviceupdater
+launchctl bootout gui/$(id -u)/com.apple.mobiledeviceupdater 2>/dev/null || true
+pkill -x MobileDeviceUpdater 2>/dev/null || true
+```
+
+Re-enable it after restoring, then log out or restart macOS:
+
+```sh
+launchctl enable gui/$(id -u)/com.apple.mobiledeviceupdater
+```
 
 ## Credits
 
